@@ -48,6 +48,27 @@ class CongestionDetector:
         self.events.clear()
         self.event_counter = 0
 
+    @property
+    def current_moving_averages(self) -> Dict[str, float]:
+        """Returns the smoothed rolling-average telemetry across the sliding window."""
+        return {
+            "avg_utilization_pct": round(sum(self.util_window) / len(self.util_window), 2) if self.util_window else 0.0,
+            "avg_latency_ms": round(sum(self.latency_window) / len(self.latency_window), 2) if self.latency_window else 0.0,
+            "avg_queue_occupancy_pct": round(sum(self.queue_window) / len(self.queue_window), 2) if self.queue_window else 0.0,
+            "avg_packet_loss_pct": round(sum(self.loss_window) / len(self.loss_window), 2) if self.loss_window else 0.0,
+        }
+
+    @property
+    def recovery_progress(self) -> Dict[str, Any]:
+        """Provides status on recovery countdown and cooldown timers."""
+        return {
+            "consecutive_clean_steps": self.consecutive_normal_steps,
+            "required_clean_steps": self.config.adaptive_recovery_steps,
+            "recovery_pct": min(100.0, round((self.consecutive_normal_steps / max(1, self.config.adaptive_recovery_steps)) * 100.0, 1)),
+            "cooldown_remaining_steps": self.cooldown_remaining_steps,
+            "cooldown_active": self.cooldown_remaining_steps > 0
+        }
+
     def update(
         self,
         current_time_sec: float,

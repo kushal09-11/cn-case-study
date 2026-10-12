@@ -65,6 +65,7 @@ class NetworkSimulationEngine:
         self.flow_delays_sec: Dict[str, List[float]] = {}
         self.last_delivered_delay_by_flow: Dict[str, float] = {}
         self.flow_jitter_accum: Dict[str, List[float]] = {}
+        self.cumulative_flow_stats: Dict[str, Dict[str, int]] = {}
 
         # Reset state
         self.reset(config)
@@ -99,10 +100,19 @@ class NetworkSimulationEngine:
         self.flow_delays_sec.clear()
         self.last_delivered_delay_by_flow.clear()
         self.flow_jitter_accum.clear()
+        self.cumulative_flow_stats.clear()
 
         for f in self.config.flows:
             self.flow_delays_sec[f.flow_id] = []
             self.flow_jitter_accum[f.flow_id] = []
+            self.cumulative_flow_stats[f.flow_id] = {
+                "generated_packets": 0,
+                "delivered_packets": 0,
+                "dropped_packets": 0,
+                "generated_bytes": 0,
+                "delivered_bytes": 0,
+                "dropped_bytes": 0,
+            }
 
     def step(self) -> StepMetrics:
         """
@@ -123,13 +133,19 @@ class NetworkSimulationEngine:
         for p in step_packets:
             flow_gen_count[p.flow_id] += 1
             flow_gen_bytes[p.flow_id] += p.size_bytes
+            if p.flow_id in self.cumulative_flow_stats:
+                self.cumulative_flow_stats[p.flow_id]["generated_packets"] += 1
+                self.cumulative_flow_stats[p.flow_id]["generated_bytes"] += p.size_bytes
 
         # 2. Get current policy from QoS Controller
         current_state = self.congestion_detector.current_state
+        moving_avgs = self.congestion_detector.current_moving_averages
+        rec_info = self.congestion_detector.recovery_progress
         policy_params = self.qos_controller.evaluate_and_update(
             t_now,
             current_state,
-            self.congestion_detector.cooldown_remaining_steps
+            moving_avgs,
+            rec_info
         )
         dynamic_bulk_limit = policy_params.get("dynamic_bulk_buffer_limit_bytes")
 
@@ -160,6 +176,9 @@ class NetworkSimulationEngine:
                     step_dropped_packets.append(pkt)
                     flow_dropped_count[pkt.flow_id] += 1
                     flow_dropped_bytes[pkt.flow_id] += pkt.size_bytes
+                    if pkt.flow_id in self.cumulative_flow_stats:
+                        self.cumulative_flow_stats[pkt.flow_id]["dropped_packets"] += 1
+                        self.cumulative_flow_stats[pkt.flow_id]["dropped_bytes"] += pkt.size_bytes
 
             # B. Schedule and transmit queued packets during this micro-slice
             if self.config.qos_mode == QoSMode.BASELINE:
@@ -171,8 +190,12 @@ class NetworkSimulationEngine:
 
             step_delivered_packets.extend(delivered)
 
-        # 4. Measure step performance metrics
+        # Physical link capacity sanity check: step delivery cannot exceed link capacity
+        max_bytes_capacity_step = (self.config.bottleneck_capacity_mbps * 1_000_000.0 * dt) / 8.0
         delivered_bytes = sum(p.size_bytes for p in step_delivered_packets)
+        if delivered_bytes > max_bytes_capacity_step:
+            delivered_bytes = max_bytes_capacity_step
+
         delivered_mbps = (delivered_bytes * 8.0) / (dt * 1_000_000.0)
         link_util_pct = min(100.0, (delivered_mbps / max(0.1, self.config.bottleneck_capacity_mbps)) * 100.0)
         queue_occ_pct = self.queue_mgr.occupancy_pct
@@ -186,6 +209,10 @@ class NetworkSimulationEngine:
         flow_step_delays: Dict[str, List[float]] = {f.flow_id: [] for f in self.config.flows}
 
         for pkt in step_delivered_packets:
+            if pkt.flow_id in self.cumulative_flow_stats:
+                self.cumulative_flow_stats[pkt.flow_id]["delivered_packets"] += 1
+                self.cumulative_flow_stats[pkt.flow_id]["delivered_bytes"] += pkt.size_bytes
+
             delay_sec = max(0.005, (pkt.delivery_time - pkt.creation_time) if pkt.delivery_time else 0.005)
             delay_ms = delay_sec * 1000.0
             step_delays_ms.append(delay_ms)
@@ -255,7 +282,7 @@ class NetworkSimulationEngine:
                 if cat_gen_pkts else 0.0
             )
 
-        # 7. Build per-flow metrics
+        # 7. Build per-flow metrics (instantaneous step + cumulative counters)
         flow_metrics_dict: Dict[str, FlowStepMetrics] = {}
         for f in self.config.flows:
             f_delays = flow_step_delays[f.flow_id]
@@ -266,6 +293,16 @@ class NetworkSimulationEngine:
             f_gen_p = flow_gen_count[f.flow_id]
             f_drop_p = flow_dropped_count[f.flow_id]
             f_del_p = flow_del_count[f.flow_id]
+
+            cum_stats = self.cumulative_flow_stats.get(f.flow_id, {
+                "generated_packets": f_gen_p,
+                "delivered_packets": f_del_p,
+                "dropped_packets": f_drop_p,
+            })
+            c_gen = cum_stats["generated_packets"]
+            c_drop = cum_stats["dropped_packets"]
+            c_del = cum_stats["delivered_packets"]
+            c_loss = round((c_drop / c_gen) * 100.0, 2) if c_gen > 0 else 0.0
 
             flow_metrics_dict[f.flow_id] = FlowStepMetrics(
                 flow_id=f.flow_id,
@@ -283,8 +320,18 @@ class NetworkSimulationEngine:
                 ) if f_delays else 5.0,
                 jitter_ms=round(sum(f_jitters) / len(f_jitters), 2) if f_jitters else 0.0,
                 packet_loss_pct=round((f_drop_p / f_gen_p) * 100.0, 2) if f_gen_p > 0 else 0.0,
-                queue_occupancy_bytes=self.queue_mgr.bytes_by_category.get(f.category, 0)
+                queue_occupancy_bytes=self.queue_mgr.bytes_by_category.get(f.category, 0),
+                cumulative_generated_packets=c_gen,
+                cumulative_delivered_packets=c_del,
+                cumulative_dropped_packets=c_drop,
+                cumulative_loss_pct=c_loss
             )
+
+        # Cumulative totals
+        cum_tot_gen = sum(s["generated_packets"] for s in self.cumulative_flow_stats.values())
+        cum_tot_del = sum(s["delivered_packets"] for s in self.cumulative_flow_stats.values())
+        cum_tot_drop = sum(s["dropped_packets"] for s in self.cumulative_flow_stats.values())
+        cum_overall_loss = round((cum_tot_drop / cum_tot_gen) * 100.0, 2) if cum_tot_gen > 0 else 0.0
 
         step_metrics = StepMetrics(
             step_index=step_idx,
@@ -304,6 +351,11 @@ class NetworkSimulationEngine:
             total_packets_generated=step_total_gen_pkts,
             total_packets_delivered=len(step_delivered_packets),
             total_packets_dropped=step_total_drop_pkts,
+            cumulative_packets_generated=cum_tot_gen,
+            cumulative_packets_delivered=cum_tot_del,
+            cumulative_packets_dropped=cum_tot_drop,
+            cumulative_loss_pct=cum_overall_loss,
+            moving_avg_metrics=self.congestion_detector.current_moving_averages,
             category_throughput_mbps=cat_tp_mbps,
             category_latency_ms=cat_lat_ms,
             category_loss_pct=cat_loss_pct,
@@ -366,6 +418,7 @@ class NetworkSimulationEngine:
         avg_util = round(sum(m.link_utilization_pct for m in self.history) / total_steps, 2)
         peak_util = round(max((m.link_utilization_pct for m in self.history), default=0.0), 2)
         avg_queue = round(sum(m.queue_occupancy_pct for m in self.history) / total_steps, 2)
+        peak_queue = round(max((m.queue_occupancy_pct for m in self.history), default=0.0), 2)
 
         cat_summary: Dict[str, Dict[str, float]] = {}
         for cat in [TrafficCategory.REAL_TIME, TrafficCategory.BEST_EFFORT, TrafficCategory.BULK]:
@@ -415,6 +468,7 @@ class NetworkSimulationEngine:
             avg_bandwidth_utilization_pct=avg_util,
             peak_bandwidth_utilization_pct=peak_util,
             avg_queue_occupancy_pct=avg_queue,
+            peak_queue_occupancy_pct=peak_queue,
             congestion_events_count=len(self.congestion_detector.events),
             congestion_duration_seconds=round(self.total_congestion_duration_sec, 2),
             qos_transitions_count=len(self.qos_controller.transitions),

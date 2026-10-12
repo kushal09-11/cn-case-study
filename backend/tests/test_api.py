@@ -49,3 +49,34 @@ def test_api_run_comparison():
     assert "baseline" in data
     assert "static_qos" in data
     assert "adaptive_qos" in data
+
+
+def test_api_qos_decision():
+    resp = client.get("/api/qos/decision")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "latest_decision" in data
+    assert "active_policy" in data
+
+
+def test_api_simulation_lifecycle():
+    # Start
+    start_resp = client.post("/api/simulation/start")
+    assert start_resp.status_code == 200
+    assert start_resp.json()["status"]["is_running"] is True
+
+    # Pause
+    pause_resp = client.post("/api/simulation/pause")
+    assert pause_resp.status_code == 200
+    assert pause_resp.json()["status"]["is_paused"] is True
+
+    # Resume
+    resume_resp = client.post("/api/simulation/resume")
+    assert resume_resp.status_code == 200
+    assert resume_resp.json()["status"]["is_running"] is True
+
+    # Reset
+    reset_resp = client.post("/api/simulation/reset")
+    assert reset_resp.status_code == 200
+    assert reset_resp.json()["status"]["is_running"] is False
+    assert reset_resp.json()["status"]["current_step"] == 0

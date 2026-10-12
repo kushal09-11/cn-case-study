@@ -51,6 +51,7 @@ class FlowConfig:
 @dataclass
 class SimulationConfig:
     simulation_id: str = "sim_default"
+    preset_name: str = "high"
     duration_seconds: float = 30.0
     time_step_seconds: float = 0.1   # 100ms per discrete simulation step
     bottleneck_capacity_mbps: float = 50.0  # Shared virtual wireless AP bottleneck link
@@ -79,6 +80,7 @@ class SimulationConfig:
 class FlowStepMetrics:
     flow_id: str
     category: TrafficCategory
+    # Instantaneous step measurements
     generated_packets: int = 0
     delivered_packets: int = 0
     dropped_packets: int = 0
@@ -91,6 +93,12 @@ class FlowStepMetrics:
     jitter_ms: float = 0.0
     packet_loss_pct: float = 0.0
     queue_occupancy_bytes: int = 0
+    
+    # Cumulative flow metrics
+    cumulative_generated_packets: int = 0
+    cumulative_delivered_packets: int = 0
+    cumulative_dropped_packets: int = 0
+    cumulative_loss_pct: float = 0.0
 
 
 @dataclass
@@ -101,7 +109,7 @@ class StepMetrics:
     active_policy: str
     congestion_state: CongestionState
     
-    # Aggregate link metrics
+    # Aggregate link metrics (instantaneous step)
     offered_load_mbps: float = 0.0
     delivered_throughput_mbps: float = 0.0
     link_utilization_pct: float = 0.0
@@ -114,10 +122,19 @@ class StepMetrics:
     jitter_ms: float = 0.0
     packet_loss_pct: float = 0.0
     
-    # Counters
+    # Counters (instantaneous step)
     total_packets_generated: int = 0
     total_packets_delivered: int = 0
     total_packets_dropped: int = 0
+
+    # Cumulative counters
+    cumulative_packets_generated: int = 0
+    cumulative_packets_delivered: int = 0
+    cumulative_packets_dropped: int = 0
+    cumulative_loss_pct: float = 0.0
+    
+    # Rolling moving-average metrics (from Congestion Detector)
+    moving_avg_metrics: Dict[str, float] = field(default_factory=dict)
     
     # Per-category metrics
     category_throughput_mbps: Dict[str, float] = field(default_factory=dict)
@@ -143,6 +160,7 @@ class AggregateMetrics:
     avg_bandwidth_utilization_pct: float = 0.0
     peak_bandwidth_utilization_pct: float = 0.0
     avg_queue_occupancy_pct: float = 0.0
+    peak_queue_occupancy_pct: float = 0.0
     congestion_events_count: int = 0
     congestion_duration_seconds: float = 0.0
     qos_transitions_count: int = 0

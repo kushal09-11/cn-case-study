@@ -40,6 +40,7 @@ def get_config():
     cfg = simulation_service.current_config
     return {
         "simulation_id": cfg.simulation_id,
+        "preset_name": cfg.preset_name,
         "duration_seconds": cfg.duration_seconds,
         "time_step_seconds": cfg.time_step_seconds,
         "bottleneck_capacity_mbps": cfg.bottleneck_capacity_mbps,
@@ -194,14 +195,30 @@ def get_congestion_diagnostics():
 
 @router.get("/qos/status")
 def get_qos_status():
+    controller = simulation_service.engine.qos_controller
+    detector = simulation_service.engine.congestion_detector
     return {
         "qos_mode": simulation_service.current_config.qos_mode.value,
-        "active_policy": simulation_service.engine.qos_controller.active_policy_name,
-        "is_throttling_bulk": simulation_service.engine.qos_controller.is_throttling_bulk,
+        "active_policy": controller.active_policy_name,
+        "is_throttling_bulk": controller.is_throttling_bulk,
         "bulk_rate_limit_ratio": simulation_service.current_config.adaptive_bulk_rate_limit_ratio,
         "recovery_steps": simulation_service.current_config.adaptive_recovery_steps,
         "cooldown_steps": simulation_service.current_config.adaptive_cooldown_steps,
-        "transitions_count": len(simulation_service.engine.qos_controller.transitions)
+        "recovery_progress": detector.recovery_progress,
+        "transitions_count": len(controller.transitions),
+        "latest_decision": controller.latest_decision
+    }
+
+
+@router.get("/qos/decision")
+def get_qos_decision():
+    controller = simulation_service.engine.qos_controller
+    detector = simulation_service.engine.congestion_detector
+    return {
+        "latest_decision": controller.latest_decision,
+        "recovery_progress": detector.recovery_progress,
+        "is_throttling_bulk": controller.is_throttling_bulk,
+        "active_policy": controller.active_policy_name
     }
 
 

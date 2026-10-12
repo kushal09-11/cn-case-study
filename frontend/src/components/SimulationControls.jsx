@@ -18,7 +18,18 @@ export function SimulationControls({ config, status, isBusy, actions }) {
   const [duration, setDuration] = useState(config?.duration_seconds || 30.0);
   const [seed, setSeed] = useState(config?.random_seed || 42);
   const [queueBytes, setQueueBytes] = useState(config?.queue_capacity_bytes || 500000);
-  const [activePreset, setActivePreset] = useState('high');
+  const [activePreset, setActivePreset] = useState(config?.preset_name || 'high');
+
+  // Sync with incoming backend config
+  React.useEffect(() => {
+    if (config) {
+      if (config.bottleneck_capacity_mbps) setCapacity(config.bottleneck_capacity_mbps);
+      if (config.duration_seconds) setDuration(config.duration_seconds);
+      if (config.random_seed) setSeed(config.random_seed);
+      if (config.queue_capacity_bytes) setQueueBytes(config.queue_capacity_bytes);
+      if (config.preset_name) setActivePreset(config.preset_name);
+    }
+  }, [config]);
 
   const isRunning = status?.is_running;
   const isPaused = status?.is_paused;
@@ -28,24 +39,24 @@ export function SimulationControls({ config, status, isBusy, actions }) {
     {
       id: 'low',
       name: 'Low Load',
-      load: '~20 Mbps',
-      desc: '3 flows (1 RT, 1 BE, 1 Bulk). Clean link, zero bufferbloat, no drops.',
+      load: '20.0 Mbps',
+      desc: '3 flows (1 RT @ 6M, 1 BE @ 8M, 1 Bulk @ 6M). 40% link load. Zero drops.',
       badge: 'Uncongested',
       badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
     },
     {
       id: 'medium',
       name: 'Medium Load',
-      load: '~45 Mbps',
-      desc: '4 flows. Approaching 90% link capacity. Slight queue buildup.',
+      load: '45.0 Mbps',
+      desc: '4 flows (1 RT @ 6M, 2 BE @ 15M+10M, 1 Bulk @ 14M). 90% load. Light queue buildup.',
       badge: 'Near Capacity',
       badgeColor: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
     },
     {
       id: 'high',
       name: 'High Load',
-      load: '~82 Mbps',
-      desc: '6 flows (>160% link capacity). Heavy congestion, queue saturation & drops!',
+      load: '82.0 Mbps',
+      desc: '6 flows (2 RT @ 12M, 2 BE @ 30M, 2 Bulk @ 40M). 164% load. Severe congestion & drops!',
       badge: 'Severe Overload',
       badgeColor: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
     },

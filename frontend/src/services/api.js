@@ -88,6 +88,11 @@ export async function getQoSHistory() {
   return res.json();
 }
 
+export async function getQoSDecision() {
+  const res = await fetch(`${API_BASE}/qos/decision`);
+  return res.json();
+}
+
 export async function runComparison(payload) {
   const res = await fetch(`${API_BASE}/experiments/run-comparison`, {
     method: 'POST',

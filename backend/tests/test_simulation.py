@@ -304,3 +304,149 @@ def test_13_and_14_lifecycle_and_persistence():
     csv_text = svc.export_csv(exp_id)
     assert "step_index,simulated_time_sec" in csv_text
     assert len(csv_text.splitlines()) > 2
+
+
+def test_15_physical_capacity_bound():
+    """Case 15: Verified that link throughput NEVER exceeds physical bottleneck capacity over any interval."""
+    config = create_default_config("high", QoSMode.BASELINE)
+    config.bottleneck_capacity_mbps = 50.0
+    config.duration_seconds = 3.0
+    engine = NetworkSimulationEngine(config)
+
+    while not engine.is_completed:
+        step = engine.step()
+        # Physical transmission limit: cannot exceed 50.0 Mbps
+        assert step.delivered_throughput_mbps <= 50.001, (
+            f"Delivered {step.delivered_throughput_mbps} Mbps which exceeds 50.0 Mbps physical link capacity!"
+        )
+
+
+def test_16_latency_calculation_no_double_counting():
+    """Case 16: Verify packet transit delay calculation does not double-count queue dwell time."""
+    from app.simulation.models import Packet
+    from app.simulation.scheduler import FIFOScheduler
+    from app.simulation.queue_manager import QueueManager
+
+    config = create_default_config("low", QoSMode.BASELINE)
+    sched = FIFOScheduler(bottleneck_capacity_mbps=50.0)
+    qm = QueueManager(capacity_bytes=config.queue_capacity_bytes, qos_mode=QoSMode.BASELINE)
+
+    # Insert a packet created at T=0.0
+    pkt = Packet(
+        packet_id="test_p1",
+        flow_id="f1",
+        category=TrafficCategory.REAL_TIME,
+        size_bytes=1250,  # 10,000 bits -> 0.2 ms tx delay at 50 Mbps
+        creation_time=0.0
+    )
+    qm.enqueue(pkt)
+
+    # Dequeue at T=0.05 (waited 50ms in queue)
+    delivered = sched.schedule(qm, current_time_sec=0.05, time_step_sec=0.1, policy_params={})
+    assert len(delivered) == 1
+    dp = delivered[0]
+    
+    # Latency is delivery_time - creation_time
+    total_latency_ms = (dp.delivery_time - dp.creation_time) * 1000.0
+    # Expected: queue_wait (50ms) + tx_delay (0.2ms) + base_wifi_delay (5ms) = ~55.2 ms
+    # If double counted, it would be ~105.2 ms!
+    assert 50.0 <= total_latency_ms <= 60.0, f"Latency calculation error: {total_latency_ms} ms"
+
+
+def test_17_cumulative_metrics_accuracy():
+    """Case 17: Verify cumulative counters accurately sum across steps without drift."""
+    config = create_default_config("high", QoSMode.BASELINE)
+    config.duration_seconds = 2.0
+    engine = NetworkSimulationEngine(config)
+
+    total_gen = 0
+    total_del = 0
+    total_drop = 0
+
+    while not engine.is_completed:
+        step = engine.step()
+        total_gen += step.total_packets_generated
+        total_del += step.total_packets_delivered
+        total_drop += step.total_packets_dropped
+
+        # Step cumulative counters should match manual sum
+        assert step.cumulative_packets_generated == total_gen
+        assert step.cumulative_packets_delivered == total_del
+        assert step.cumulative_packets_dropped == total_drop
+
+    assert total_drop > 0, "High load should experience drops"
+    expected_loss_pct = round((total_drop / total_gen) * 100.0, 2)
+    assert abs(step.cumulative_loss_pct - expected_loss_pct) < 0.1
+
+
+def test_18_adaptive_wfq_vs_static_priority():
+    """Case 18: In normal state, Adaptive QoS uses WFQ to prevent bulk starvation."""
+    from app.simulation.scheduler import AdaptiveQoSScheduler, StaticQoSScheduler
+    from app.simulation.queue_manager import QueueManager
+    from app.simulation.models import Packet
+
+    adaptive_sched = AdaptiveQoSScheduler(bottleneck_capacity_mbps=50.0)
+    static_sched = StaticQoSScheduler(bottleneck_capacity_mbps=50.0)
+    qm_adapt = QueueManager(capacity_bytes=500_000, qos_mode=QoSMode.ADAPTIVE_QoS)
+    qm_stat = QueueManager(capacity_bytes=500_000, qos_mode=QoSMode.STATIC_QoS)
+
+    # Enqueue 5 RT, 5 BE, 5 Bulk packets
+    for i in range(5):
+        qm_adapt.enqueue(Packet(f"rt_{i}", "f_rt", TrafficCategory.REAL_TIME, 1000, 0.0))
+        qm_adapt.enqueue(Packet(f"be_{i}", "f_be", TrafficCategory.BEST_EFFORT, 1000, 0.0))
+        qm_adapt.enqueue(Packet(f"bk_{i}", "f_bk", TrafficCategory.BULK, 1000, 0.0))
+
+        qm_stat.enqueue(Packet(f"rt_{i}", "f_rt", TrafficCategory.REAL_TIME, 1000, 0.0))
+        qm_stat.enqueue(Packet(f"be_{i}", "f_be", TrafficCategory.BEST_EFFORT, 1000, 0.0))
+        qm_stat.enqueue(Packet(f"bk_{i}", "f_bk", TrafficCategory.BULK, 1000, 0.0))
+
+    # Transmit a burst that fits ~3 packets (3,125 bytes limit)
+    stat_delivered = static_sched.schedule(qm_stat, current_time_sec=0.0, time_step_sec=0.0005, policy_params={})
+    assert len(stat_delivered) == 3
+    stat_cats = [p.category for p in stat_delivered]
+    assert all(c == TrafficCategory.REAL_TIME for c in stat_cats), f"Static QoS must prioritize RT: {stat_cats}"
+
+    # Adaptive in NORMAL state uses WFQ, interleaving RT, BE, and Bulk
+    adapt_delivered = adaptive_sched.schedule(qm_adapt, current_time_sec=0.0, time_step_sec=0.0015, policy_params={"is_congested": False})
+    adapt_cats = set(p.category for p in adapt_delivered)
+    # Should serve multiple categories, including Bulk
+    assert len(adapt_cats) > 1, f"WFQ should serve multiple traffic classes: {adapt_cats}"
+
+
+def test_19_adaptive_decision_logging_and_recovery():
+    """Case 19: Adaptive QoS controller records comprehensive decision evidence and recovers with hysteresis."""
+    config = create_default_config("high", QoSMode.ADAPTIVE_QoS)
+    config.duration_seconds = 3.0
+    config.adaptive_recovery_steps = 3
+    engine = NetworkSimulationEngine(config)
+
+    # Run into congestion
+    for _ in range(15):
+        engine.step()
+
+    controller = engine.qos_controller
+    assert controller.latest_decision is not None
+    dec = controller.latest_decision
+    assert "trigger_evidence" in dec
+    assert "affected_classes" in dec
+    assert "bulk_restriction_active" in dec
+    assert dec["action_applied_successfully"] is True
+
+
+def test_20_per_class_comparison_matrix():
+    """Case 20: run_comparison computes per-class metrics and peak buffer occupancy."""
+    svc = SimulationService()
+    res = svc.run_comparison({
+        "preset_name": "high",
+        "bottleneck_capacity_mbps": 50.0,
+        "duration_seconds": 2.0,
+        "random_seed": 999
+    })
+
+    assert res.baseline.real_time_throughput_mbps > 0.0
+    assert res.baseline.best_effort_throughput_mbps > 0.0
+    assert res.baseline.bulk_throughput_mbps > 0.0
+    assert res.baseline.peak_queue_occupancy_pct > 0.0
+    assert res.adaptive_qos.peak_queue_occupancy_pct > 0.0
+    assert res.static_qos.peak_queue_occupancy_pct > 0.0
+

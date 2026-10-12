@@ -158,6 +158,11 @@ class SimulationService:
                 "total_packets_generated": latest.total_packets_generated,
                 "total_packets_delivered": latest.total_packets_delivered,
                 "total_packets_dropped": latest.total_packets_dropped,
+                "cumulative_packets_generated": latest.cumulative_packets_generated,
+                "cumulative_packets_delivered": latest.cumulative_packets_delivered,
+                "cumulative_packets_dropped": latest.cumulative_packets_dropped,
+                "cumulative_loss_pct": latest.cumulative_loss_pct,
+                "moving_avg_metrics": latest.moving_avg_metrics,
                 "category_throughput_mbps": latest.category_throughput_mbps,
                 "category_latency_ms": latest.category_latency_ms,
                 "category_loss_pct": latest.category_loss_pct,
@@ -173,7 +178,11 @@ class SimulationService:
                         "p95_latency_ms": v.p95_latency_ms,
                         "jitter_ms": v.jitter_ms,
                         "packet_loss_pct": v.packet_loss_pct,
-                        "queue_occupancy_bytes": v.queue_occupancy_bytes
+                        "queue_occupancy_bytes": v.queue_occupancy_bytes,
+                        "cumulative_generated_packets": v.cumulative_generated_packets,
+                        "cumulative_delivered_packets": v.cumulative_delivered_packets,
+                        "cumulative_dropped_packets": v.cumulative_dropped_packets,
+                        "cumulative_loss_pct": v.cumulative_loss_pct
                     }
                     for k, v in latest.flow_metrics.items()
                 }
@@ -186,9 +195,13 @@ class SimulationService:
             "current_step": self.engine.current_step,
             "current_time_seconds": round(self.engine.current_time_sec, 2),
             "duration_seconds": self.current_config.duration_seconds,
+            "preset_name": self.current_config.preset_name,
             "qos_mode": self.current_config.qos_mode.value,
             "active_policy": self.engine.qos_controller.active_policy_name,
             "congestion_state": self.engine.congestion_detector.current_state.value,
+            "moving_avg_metrics": self.engine.congestion_detector.current_moving_averages,
+            "latest_decision": self.engine.qos_controller.latest_decision,
+            "recovery_progress": self.engine.congestion_detector.recovery_progress,
             "latest_metrics": latest_dict
         }
 
@@ -209,6 +222,7 @@ class SimulationService:
             "queue_occupancy_bytes": latest.queue_occupancy_bytes if latest else 0,
             "queue_capacity_bytes": self.current_config.queue_capacity_bytes,
             "packet_drops": latest.total_packets_dropped if latest else 0,
+            "cumulative_drops": latest.cumulative_packets_dropped if latest else 0,
             "congestion_state": self.engine.congestion_detector.current_state.value,
             "active_qos_policy": self.engine.qos_controller.active_policy_name
         }
@@ -232,7 +246,8 @@ class SimulationService:
                 "warning_threshold_util": self.current_config.threshold_utilization_warning,
                 "congested_threshold_util": self.current_config.threshold_utilization_congested,
                 "congested_threshold_queue": self.current_config.threshold_queue_occupancy_congested,
-                "events_detected": len(self.engine.congestion_detector.events)
+                "events_detected": len(self.engine.congestion_detector.events),
+                "moving_averages": self.engine.congestion_detector.current_moving_averages
             }
         })
         edges.append({
@@ -254,7 +269,8 @@ class SimulationService:
                 "qos_mode": self.current_config.qos_mode.value,
                 "active_policy": self.engine.qos_controller.active_policy_name,
                 "bulk_rate_limit": f"{int(self.current_config.adaptive_bulk_rate_limit_ratio * 100)}%",
-                "transitions_count": len(self.engine.qos_controller.transitions)
+                "transitions_count": len(self.engine.qos_controller.transitions),
+                "latest_decision": self.engine.qos_controller.latest_decision
             }
         })
         edges.append({
@@ -269,8 +285,8 @@ class SimulationService:
         # Virtual Client Nodes placed in an arc/grid around AP
         flows = self.current_config.flows
         num_flows = len(flows)
-        x_start = 100
-        x_gap = 160 if num_flows <= 4 else 120
+        x_start = 80
+        x_gap = 180 if num_flows <= 4 else 140
 
         for i, f in enumerate(flows):
             client_x = x_start + (i * x_gap)
@@ -289,7 +305,10 @@ class SimulationService:
                 "p95_latency_ms": f_metric.p95_latency_ms if f_metric else 5.0,
                 "jitter_ms": f_metric.jitter_ms if f_metric else 0.0,
                 "packet_loss_pct": f_metric.packet_loss_pct if f_metric else 0.0,
-                "dropped_packets": f_metric.dropped_packets if f_metric else 0
+                "dropped_packets": f_metric.dropped_packets if f_metric else 0,
+                "cumulative_dropped_packets": f_metric.cumulative_dropped_packets if f_metric else 0,
+                "cumulative_generated_packets": f_metric.cumulative_generated_packets if f_metric else 0,
+                "cumulative_loss_pct": f_metric.cumulative_loss_pct if f_metric else 0.0
             }
 
             nodes.append({
@@ -302,6 +321,7 @@ class SimulationService:
             })
 
             # Edge connecting client to router
+            has_drops = (f_metric.dropped_packets > 0) if f_metric else False
             edges.append({
                 "id": f"edge_{f.client_id}_router",
                 "source": f.client_id,
@@ -309,7 +329,7 @@ class SimulationService:
                 "label": f"{f.offered_load_mbps}M",
                 "traffic_category": f.category.value,
                 "animated": True,
-                "is_congested": is_congested and (f.category == TrafficCategory.BULK or latest.packet_loss_pct > 2.0 if latest else False)
+                "is_congested": is_congested and (has_drops or f.category == TrafficCategory.BULK)
             })
 
         return {
@@ -336,7 +356,7 @@ class SimulationService:
             cfg_id = f"cfg_{uuid.uuid4().hex[:8]}"
             cfg_model = SimConfigModel(
                 id=cfg_id,
-                preset_name="custom",
+                preset_name=self.current_config.preset_name,
                 bottleneck_capacity_mbps=self.current_config.bottleneck_capacity_mbps,
                 queue_capacity_bytes=self.current_config.queue_capacity_bytes,
                 duration_seconds=self.current_config.duration_seconds,
@@ -451,6 +471,7 @@ class SimulationService:
             agg = sim_runner.run_full()
 
             rt_stats = agg.category_metrics.get(TrafficCategory.REAL_TIME.value, {})
+            be_stats = agg.category_metrics.get(TrafficCategory.BEST_EFFORT.value, {})
             bulk_stats = agg.category_metrics.get(TrafficCategory.BULK.value, {})
 
             item = ComparisonResultItem(
@@ -461,21 +482,42 @@ class SimulationService:
                 overall_jitter_ms=agg.overall_jitter_ms,
                 overall_packet_loss_pct=agg.overall_packet_loss_pct,
                 avg_bandwidth_utilization_pct=agg.avg_bandwidth_utilization_pct,
+                peak_bandwidth_utilization_pct=agg.peak_bandwidth_utilization_pct,
                 avg_queue_occupancy_pct=agg.avg_queue_occupancy_pct,
+                peak_queue_occupancy_pct=agg.peak_queue_occupancy_pct,
                 congestion_duration_seconds=agg.congestion_duration_seconds,
                 congestion_events_count=agg.congestion_events_count,
                 qos_transitions_count=agg.qos_transitions_count,
+                # Per-class breakdowns
                 real_time_avg_latency_ms=rt_stats.get("avg_latency_ms", 5.0),
+                real_time_p95_latency_ms=rt_stats.get("p95_latency_ms", 5.0),
                 real_time_loss_pct=rt_stats.get("packet_loss_pct", 0.0),
+                rt_throughput_mbps=rt_stats.get("throughput_mbps", 0.0),
+                real_time_throughput_mbps=rt_stats.get("throughput_mbps", 0.0),
+                best_effort_avg_latency_ms=be_stats.get("avg_latency_ms", 5.0),
+                best_effort_loss_pct=be_stats.get("packet_loss_pct", 0.0),
+                be_throughput_mbps=be_stats.get("throughput_mbps", 0.0),
+                best_effort_throughput_mbps=be_stats.get("throughput_mbps", 0.0),
                 bulk_avg_latency_ms=bulk_stats.get("avg_latency_ms", 5.0),
-                bulk_throughput_mbps=bulk_stats.get("throughput_mbps", 0.0)
+                bulk_p95_latency_ms=bulk_stats.get("p95_latency_ms", 5.0),
+                bulk_throughput_mbps=bulk_stats.get("throughput_mbps", 0.0),
+                bulk_loss_pct=bulk_stats.get("packet_loss_pct", 0.0)
             )
             results[mode.value] = item
 
+        b_rt_lat = results[QoSMode.BASELINE.value].real_time_avg_latency_ms
+        s_rt_lat = results[QoSMode.STATIC_QoS.value].real_time_avg_latency_ms
+        a_rt_lat = results[QoSMode.ADAPTIVE_QoS.value].real_time_avg_latency_ms
+        a_queue = results[QoSMode.ADAPTIVE_QoS.value].avg_queue_occupancy_pct
+        b_queue = results[QoSMode.BASELINE.value].avg_queue_occupancy_pct
+        a_bulk_tp = results[QoSMode.ADAPTIVE_QoS.value].bulk_throughput_mbps
+        b_bulk_tp = results[QoSMode.BASELINE.value].bulk_throughput_mbps
+
         recommendations = [
-            "Baseline FIFO allows bulk traffic to bloat queues and cause severe packet drops in real-time video/voice.",
-            "Static QoS guarantees lowest latency for real-time traffic by serving priority queues first.",
-            "Adaptive QoS dynamically clamps bulk bandwidth during congestion bursts, preventing bufferbloat while restoring full throughput during normal traffic."
+            f"Baseline FIFO experienced {b_rt_lat:.1f} ms real-time latency due to bufferbloat from competing bulk transfers.",
+            f"Static QoS evacuated priority queues first, reducing real-time latency to {s_rt_lat:.1f} ms (a {((b_rt_lat - s_rt_lat)/max(0.1, b_rt_lat)*100):.1f}% reduction).",
+            f"Adaptive QoS autonomously clamped bulk buffer depth, lowering average queue occupancy from {b_queue:.1f}% to {a_queue:.1f}%, while keeping real-time latency at {a_rt_lat:.1f} ms.",
+            f"Tradeoff: Adaptive QoS throttled bulk throughput from {b_bulk_tp:.1f} Mbps down to {a_bulk_tp:.1f} Mbps to protect interactive channel access."
         ]
 
         return ComparisonResponse(

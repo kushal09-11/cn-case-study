@@ -24,10 +24,15 @@ import { CongestionSection } from './components/CongestionSection';
 import { QoSSection } from './components/QoSSection';
 import { ComparisonModal } from './components/ComparisonModal';
 import { HistorySection } from './components/HistorySection';
+import { FlowMetricsTable } from './components/FlowMetricsTable';
+import { EventTimeline } from './components/EventTimeline';
+import { GuidedDemoBar } from './components/GuidedDemoBar';
+import { TerminologyModal } from './components/TerminologyModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedNode, setSelectedNode] = useState(null);
+  const [isTerminologyOpen, setIsTerminologyOpen] = useState(false);
 
   const {
     status,
@@ -57,6 +62,7 @@ export default function App() {
         isConnected={isConnected}
         isBusy={isBusy}
         actions={actions}
+        onOpenTerminology={() => setIsTerminologyOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -163,6 +169,14 @@ export default function App() {
               </div>
             )}
 
+            {/* Guided Experiment Walkthrough Stepper */}
+            <GuidedDemoBar
+              actions={actions}
+              config={config}
+              status={status}
+              isBusy={isBusy}
+            />
+
             {/* Main Interactive Topology Section */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -191,6 +205,18 @@ export default function App() {
 
             {/* Live Chart Previews */}
             <AnalyticsCharts history={history.slice(-40)} />
+
+            {/* Per-Flow Granular Metrics Table */}
+            <FlowMetricsTable
+              latestMetrics={latest}
+              config={config}
+            />
+
+            {/* Synchronized Simulation Event Timeline */}
+            <EventTimeline
+              congestionEvents={events}
+              qosTransitions={qosHistory}
+            />
           </div>
         )}
 
@@ -269,6 +295,12 @@ export default function App() {
           <HistorySection />
         )}
       </main>
+
+      {/* Terminology & Metrics Modal */}
+      <TerminologyModal
+        isOpen={isTerminologyOpen}
+        onClose={() => setIsTerminologyOpen(false)}
+      />
 
       {/* Node Inspector Drawer */}
       {selectedNode && (

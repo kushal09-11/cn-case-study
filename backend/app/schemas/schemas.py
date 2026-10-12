@@ -17,6 +17,7 @@ class FlowConfigSchema(BaseModel):
 
 class SimConfigSchema(BaseModel):
     simulation_id: str = "sim_default"
+    preset_name: str = "high"
     duration_seconds: float = 30.0
     time_step_seconds: float = 0.1
     bottleneck_capacity_mbps: float = 50.0
@@ -64,6 +65,10 @@ class FlowStepMetricsSchema(BaseModel):
     jitter_ms: float
     packet_loss_pct: float
     queue_occupancy_bytes: int
+    cumulative_generated_packets: int = 0
+    cumulative_delivered_packets: int = 0
+    cumulative_dropped_packets: int = 0
+    cumulative_loss_pct: float = 0.0
 
 
 class StepMetricsSchema(BaseModel):
@@ -84,6 +89,11 @@ class StepMetricsSchema(BaseModel):
     total_packets_generated: int
     total_packets_delivered: int
     total_packets_dropped: int
+    cumulative_packets_generated: int = 0
+    cumulative_packets_delivered: int = 0
+    cumulative_packets_dropped: int = 0
+    cumulative_loss_pct: float = 0.0
+    moving_avg_metrics: Dict[str, float] = {}
     category_throughput_mbps: Dict[str, float]
     category_latency_ms: Dict[str, float]
     category_loss_pct: Dict[str, float]
@@ -100,6 +110,7 @@ class SimulationStatusResponse(BaseModel):
     qos_mode: QoSMode
     active_policy: str
     congestion_state: CongestionState
+    moving_avg_metrics: Dict[str, float] = {}
     latest_metrics: Optional[StepMetricsSchema] = None
 
 
@@ -144,14 +155,26 @@ class ComparisonResultItem(BaseModel):
     overall_jitter_ms: float
     overall_packet_loss_pct: float
     avg_bandwidth_utilization_pct: float
+    peak_bandwidth_utilization_pct: float = 0.0
     avg_queue_occupancy_pct: float
+    peak_queue_occupancy_pct: float = 0.0
     congestion_duration_seconds: float
     congestion_events_count: int
     qos_transitions_count: int
+    # Per-class breakdowns
     real_time_avg_latency_ms: float
+    real_time_p95_latency_ms: float = 5.0
     real_time_loss_pct: float
+    rt_throughput_mbps: float = 0.0
+    real_time_throughput_mbps: float = 0.0
+    best_effort_avg_latency_ms: float = 5.0
+    best_effort_loss_pct: float = 0.0
+    be_throughput_mbps: float = 0.0
+    best_effort_throughput_mbps: float = 0.0
     bulk_avg_latency_ms: float
+    bulk_p95_latency_ms: float = 5.0
     bulk_throughput_mbps: float
+    bulk_loss_pct: float = 0.0
 
 
 class ComparisonResponse(BaseModel):
@@ -160,3 +183,19 @@ class ComparisonResponse(BaseModel):
     adaptive_qos: ComparisonResultItem
     recommendations: List[str]
     notes: str
+
+
+class AdaptiveDecisionResponse(BaseModel):
+    current_state: str
+    active_policy: str
+    previous_policy: str
+    reason: str
+    trigger_evidence: Dict[str, Any]
+    affected_classes: List[str]
+    affected_flows: List[str]
+    bulk_restriction: str
+    recovery_condition: str
+    recovery_status: str
+    cooldown_status: str
+    action_applied: bool
+    simulator_verified: bool

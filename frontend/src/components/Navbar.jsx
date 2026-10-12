@@ -22,7 +22,8 @@ export function Navbar({
   status, 
   isConnected, 
   isBusy, 
-  actions 
+  actions,
+  onOpenTerminology
 }) {
   const isRunning = status?.is_running;
   const isPaused = status?.is_paused;
@@ -89,6 +90,16 @@ export function Navbar({
           <div className="flex items-center gap-2.5">
             {getQoSBadge()}
             {getStateBadge()}
+
+            {onOpenTerminology && (
+              <button
+                onClick={onOpenTerminology}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 transition-all"
+                title="Open Networking Terminology Guide"
+              >
+                <span>📖 Glossary</span>
+              </button>
+            )}
 
             {/* Quick Actions */}
             <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-slate-800">

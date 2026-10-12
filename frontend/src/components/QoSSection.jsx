@@ -1,5 +1,6 @@
 import React from 'react';
 import { Cpu, ShieldCheck, ArrowRight, Clock, Sliders, CheckCircle } from 'lucide-react';
+import { AdaptiveDecisionPanel } from './AdaptiveDecisionPanel';
 
 export function QoSSection({ qosStatus, qosHistory, config, status }) {
   const mode = qosStatus?.qos_mode || 'baseline';
@@ -8,6 +9,14 @@ export function QoSSection({ qosStatus, qosHistory, config, status }) {
 
   return (
     <div className="space-y-6">
+      {/* Real-Time Adaptive Decision Panel */}
+      <AdaptiveDecisionPanel
+        decision={qosStatus?.latest_decision || status?.latest_decision}
+        qosStatus={qosStatus}
+        config={config}
+        status={status}
+      />
+
       {/* Current Controller State Card */}
       <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-xl">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
