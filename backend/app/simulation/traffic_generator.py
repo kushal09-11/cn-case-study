@@ -34,9 +34,20 @@ class TrafficGenerator:
             if flow.offered_load_mbps <= 0.0:
                 continue
 
+            # Check if flow is in burst period
+            is_bursting = False
+            burst_mult = 1.0
+            if getattr(flow, "burst_start_sec", 0.0) > 0 and getattr(flow, "burst_duration_sec", 0.0) > 0:
+                burst_end = flow.burst_start_sec + flow.burst_duration_sec
+                if flow.burst_start_sec <= current_time_seconds < burst_end:
+                    is_bursting = True
+                    burst_mult = max(1.0, getattr(flow, "burst_multiplier", 1.0))
+
+            effective_load_mbps = flow.offered_load_mbps * burst_mult
+
             # Calculate base bytes offered in this time step
-            # offered_load_mbps * 1e6 bits/sec * time_step / 8 bits/byte
-            base_bytes_per_step = (flow.offered_load_mbps * 1_000_000.0 * time_step_seconds) / 8.0
+            # effective_load_mbps * 1e6 bits/sec * time_step / 8 bits/byte
+            base_bytes_per_step = (effective_load_mbps * 1_000_000.0 * time_step_seconds) / 8.0
             
             # Apply traffic characteristics per category
             # Real-time: low variance, periodic packets

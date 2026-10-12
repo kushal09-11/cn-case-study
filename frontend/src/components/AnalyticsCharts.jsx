@@ -17,7 +17,7 @@ export function AnalyticsCharts({ history }) {
   if (!history || history.length === 0) {
     return (
       <div className="h-[400px] flex items-center justify-center rounded-2xl bg-slate-900/40 border border-slate-800 text-slate-400 text-sm">
-        No simulation metrics recorded yet. Start the simulation to generate real telemetry.
+        No data yet. Start the simulation to see live charts.
       </div>
     );
   }
@@ -58,9 +58,9 @@ export function AnalyticsCharts({ history }) {
             <div>
               <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-sky-400" />
-                Offered vs. Delivered Throughput
+                Traffic Demand vs. Actual Throughput
               </h4>
-              <p className="text-[11px] text-slate-400">Total offered load compared to shared bottleneck link throughput.</p>
+              <p className="text-[11px] text-slate-400">How much traffic was requested vs. how much actually got through.</p>
             </div>
             <span className="text-[10px] font-mono text-slate-400">Unit: Mbps</span>
           </div>
@@ -96,9 +96,9 @@ export function AnalyticsCharts({ history }) {
             <div>
               <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-emerald-400" />
-                Simulated Latency (Avg &amp; P95)
+                Packet Delay Over Time
               </h4>
-              <p className="text-[11px] text-slate-400">Arithmetic mean and 95th-percentile packet delay through AP queue.</p>
+              <p className="text-[11px] text-slate-400">Average delay and worst-case delay (slowest 5%) for packets traveling through the router.</p>
             </div>
             <span className="text-[10px] font-mono text-slate-400">Unit: ms</span>
           </div>
@@ -127,9 +127,9 @@ export function AnalyticsCharts({ history }) {
             <div>
               <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                 <BarChart2 className="w-4 h-4 text-indigo-400" />
-                Per-Category Delivered Throughput
+                Bandwidth by Traffic Type
               </h4>
-              <p className="text-[11px] text-slate-400">Real-Time vs. Best-Effort vs. Bulk bandwidth allocation.</p>
+              <p className="text-[11px] text-slate-400">How much bandwidth each type of traffic (video/voice, web browsing, downloads) is getting.</p>
             </div>
             <span className="text-[10px] font-mono text-slate-400">Unit: Mbps</span>
           </div>
@@ -156,9 +156,9 @@ export function AnalyticsCharts({ history }) {
             <div>
               <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-rose-400" />
-                Queue Buffer Occupancy &amp; Packet Loss
+                Queue Fullness &amp; Dropped Packets
               </h4>
-              <p className="text-[11px] text-slate-400">Buffer depth % and tail drop packet loss percentage.</p>
+              <p className="text-[11px] text-slate-400">How full the router's buffer is and what percentage of packets are being dropped.</p>
             </div>
             <span className="text-[10px] font-mono text-slate-400">Unit: %</span>
           </div>

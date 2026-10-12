@@ -13,6 +13,9 @@ class FlowConfigSchema(BaseModel):
     offered_load_mbps: float
     packet_size_bytes: int
     priority: int = 2
+    burst_start_sec: float = 0.0
+    burst_duration_sec: float = 0.0
+    burst_multiplier: float = 1.0
 
 
 class SimConfigSchema(BaseModel):
@@ -23,6 +26,7 @@ class SimConfigSchema(BaseModel):
     queue_capacity_bytes: int = 500_000
     random_seed: int = 42
     qos_mode: QoSMode = QoSMode.BASELINE
+    scenario_name: str = "Default High Load"
     
     threshold_utilization_warning: float = 85.0
     threshold_utilization_congested: float = 95.0
@@ -64,6 +68,17 @@ class FlowStepMetricsSchema(BaseModel):
     jitter_ms: float
     packet_loss_pct: float
     queue_occupancy_bytes: int
+    is_bursting: bool = False
+
+
+class NewScenarioResponse(BaseModel):
+    seed: int
+    num_clients: int
+    baseline_offered_load_mbps: float
+    peak_offered_load_mbps: float
+    expected_congestion: str
+    flows: List[FlowConfigSchema]
+    message: str
 
 
 class StepMetricsSchema(BaseModel):
@@ -130,10 +145,11 @@ class TopologyResponse(BaseModel):
 
 
 class ComparisonRequest(BaseModel):
-    preset_name: str = "high"
-    bottleneck_capacity_mbps: float = 50.0
-    duration_seconds: float = 20.0
-    random_seed: int = 42
+    preset_name: Optional[str] = None
+    bottleneck_capacity_mbps: Optional[float] = None
+    duration_seconds: Optional[float] = None
+    random_seed: Optional[int] = None
+    use_current_scenario: bool = True
 
 
 class ComparisonResultItem(BaseModel):

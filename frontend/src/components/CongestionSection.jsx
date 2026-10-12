@@ -17,31 +17,31 @@ export function CongestionSection({ status, config, events, diagnostics }) {
     switch (currentState) {
       case 'congested':
         return {
-          title: 'CONGESTED STATE ACTIVE',
-          desc: 'Sustained overload: Shared wireless bottleneck capacity or buffer limits exceeded.',
+          title: 'Network is Congested',
+          desc: 'Too many devices are sending data at once. The network is overwhelmed — expect delays and dropped packets.',
           color: 'bg-rose-500/20 border-rose-500/40 text-rose-300',
           badge: 'High Impact',
         };
       case 'warning':
         return {
-          title: 'WARNING THRESHOLD REACHED',
-          desc: 'High link utilization or queue buildup detected. Approaching congestion limits.',
+          title: 'High Traffic Warning',
+          desc: 'The network is getting busy. Not yet congested, but delays may increase soon.',
           color: 'bg-amber-500/20 border-amber-500/40 text-amber-300',
           badge: 'Elevated Load',
         };
       case 'recovering':
         return {
-          title: 'RECOVERING (VERIFICATION)',
-          desc: 'Traffic has subsided. Verifying stability over persistence window before exiting.',
+          title: 'Recovering — Monitoring…',
+          desc: 'Traffic has eased up. Waiting to confirm the network is stable before clearing the alert.',
           color: 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300',
           badge: 'Stabilizing',
         };
       default:
         return {
-          title: 'NORMAL OPERATION',
-          desc: 'All monitored signals (latency, loss, utilization, queue depth) within nominal parameters.',
+          title: 'All Good — Normal Operation',
+          desc: 'Speed, delays, packet loss, and queue depth are all within healthy limits.',
           color: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300',
-          badge: 'Optimal Health',
+          badge: 'Healthy',
         };
     }
   };
@@ -70,19 +70,19 @@ export function CongestionSection({ status, config, events, diagnostics }) {
         {/* Active Thresholds */}
         <div className="flex items-center gap-4 text-xs bg-slate-950/60 px-4 py-2 rounded-xl border border-slate-800">
           <div>
-            <div className="text-[10px] text-slate-400">Congestion Util</div>
-            <div className="font-bold text-slate-200">{config?.threshold_utilization_congested}%</div>
+            <div className="text-[10px] text-slate-400">Congestion at</div>
+            <div className="font-bold text-slate-200">{config?.threshold_utilization_congested}% usage</div>
           </div>
           <div>
-            <div className="text-[10px] text-slate-400">Queue Trigger</div>
+            <div className="text-[10px] text-slate-400">Queue full at</div>
             <div className="font-bold text-slate-200">{config?.threshold_queue_occupancy_congested}%</div>
           </div>
           <div>
-            <div className="text-[10px] text-slate-400">Loss Trigger</div>
-            <div className="font-bold text-slate-200">{config?.threshold_packet_loss_congested}%</div>
+            <div className="text-[10px] text-slate-400">Drop alert at</div>
+            <div className="font-bold text-slate-200">{config?.threshold_packet_loss_congested}% loss</div>
           </div>
           <div>
-            <div className="text-[10px] text-slate-400">Latency Trigger</div>
+            <div className="text-[10px] text-slate-400">Delay alert at</div>
             <div className="font-bold text-slate-200">{config?.threshold_latency_congested_ms} ms</div>
           </div>
         </div>
@@ -94,17 +94,17 @@ export function CongestionSection({ status, config, events, diagnostics }) {
           <div>
             <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-indigo-400" />
-              Explainable Root-Cause Hypotheses
+              Why is the Network Congested?
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Rule-based diagnostic inference derived strictly from simulated link measurements.
+              The simulator analyzes the network data and explains what is causing problems and what to do about it.
             </p>
           </div>
         </div>
 
         {diagnostics.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs">
-            Simulation has not generated diagnostic data yet. Start simulation to observe inference.
+            No analysis yet. Start the simulation to see what's causing issues.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -131,7 +131,7 @@ export function CongestionSection({ status, config, events, diagnostics }) {
 
                     {/* Supporting measurements */}
                     <div className="my-3 p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 text-[11px] font-mono space-y-1">
-                      <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Supporting Telemetry:</div>
+                      <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Evidence:</div>
                       {Object.entries(diag.supporting_measurements || {}).map(([key, val]) => (
                         <div key={key} className="flex justify-between text-slate-300">
                           <span className="text-slate-400">{key}:</span>
@@ -156,24 +156,24 @@ export function CongestionSection({ status, config, events, diagnostics }) {
       <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-xl">
         <h3 className="text-base font-bold text-slate-100 flex items-center gap-2 mb-1">
           <Clock className="w-5 h-5 text-amber-400" />
-          Congestion State Transition Log
+          Congestion Event Log
         </h3>
         <p className="text-xs text-slate-400 mb-4">
-          Chronological record of detector state transitions with hysteresis validation.
+          A timeline of when the network became congested, recovered, or changed state during the simulation.
         </p>
 
         {events.length === 0 ? (
           <div className="p-6 text-center text-slate-400 text-xs border border-dashed border-slate-800 rounded-xl">
-            No state transitions logged yet. Run simulation under high load to trigger state changes.
+            No events yet. Run the simulation on Heavy Traffic to see congestion events appear here.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-800/60 text-slate-400 uppercase text-[10px] font-semibold border-b border-slate-800">
                 <tr>
-                  <th className="py-2.5 px-3">Sim Time</th>
-                  <th className="py-2.5 px-3">Transition</th>
-                  <th className="py-2.5 px-3">Reason / Trigger Telemetry</th>
+                  <th className="py-2.5 px-3">Time</th>
+                  <th className="py-2.5 px-3">State Change</th>
+                  <th className="py-2.5 px-3">What Triggered It</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">

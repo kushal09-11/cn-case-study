@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Sliders, 
   Zap, 
@@ -10,43 +10,54 @@ import {
   Clock, 
   Hash, 
   HardDrive,
-  Info
+  Info,
+  Sparkles,
+  Dices,
+  RefreshCw
 } from 'lucide-react';
 
 export function SimulationControls({ config, status, isBusy, actions }) {
   const [capacity, setCapacity] = useState(config?.bottleneck_capacity_mbps || 50.0);
   const [duration, setDuration] = useState(config?.duration_seconds || 30.0);
   const [seed, setSeed] = useState(config?.random_seed || 42);
+  const [customSeedInput, setCustomSeedInput] = useState('');
   const [queueBytes, setQueueBytes] = useState(config?.queue_capacity_bytes || 500000);
-  const [activePreset, setActivePreset] = useState('high');
+  const [activePreset, setActivePreset] = useState('random');
+
+  useEffect(() => {
+    if (config?.random_seed) {
+      setSeed(config.random_seed);
+    }
+  }, [config?.random_seed]);
 
   const isRunning = status?.is_running;
   const isPaused = status?.is_paused;
   const qosMode = config?.qos_mode || 'baseline';
+  const totalOffered = Math.round(config?.flows?.reduce((acc, f) => acc + (f.offered_load_mbps || 0), 0) || 0);
 
   const presets = [
     {
       id: 'low',
-      name: 'Low Load',
+      name: 'Low Traffic',
       load: '~20 Mbps',
-      desc: '3 flows (1 RT, 1 BE, 1 Bulk). Clean link, zero bufferbloat, no drops.',
-      badge: 'Uncongested',
+      desc: '3 devices sharing the network. Everything runs smoothly — no congestion, no dropped packets.',
+      badge: 'No Congestion',
       badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
     },
     {
       id: 'medium',
-      name: 'Medium Load',
+      name: 'Medium Traffic',
       load: '~45 Mbps',
-      desc: '4 flows. Approaching 90% link capacity. Slight queue buildup.',
-      badge: 'Near Capacity',
+      desc: '4 devices. Network is nearly full (≈90% capacity). You may see slight delays building up.',
+      badge: 'Near Full',
       badgeColor: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
     },
     {
       id: 'high',
-      name: 'High Load',
+      name: 'Heavy Traffic',
       load: '~82 Mbps',
-      desc: '6 flows (>160% link capacity). Heavy congestion, queue saturation & drops!',
-      badge: 'Severe Overload',
+      desc: '6 devices pushing way more than the network can handle. Expect high delays and dropped packets!',
+      badge: 'Severely Overloaded',
       badgeColor: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
     },
   ];
@@ -65,22 +76,114 @@ export function SimulationControls({ config, status, isBusy, actions }) {
     actions.setPreset(pId, qosMode);
   };
 
+  const handleLoadCustomSeed = () => {
+    const s = parseInt(customSeedInput, 10);
+    if (!isNaN(s)) {
+      actions.newScenario(s);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Quick Traffic Presets Card */}
+      {/* 1. Dynamic Random Scenario Generator Card */}
+      <div className="rounded-2xl bg-gradient-to-br from-indigo-950/40 via-slate-900/80 to-slate-900 border border-indigo-500/30 p-6 shadow-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300">
+                <Sparkles className="w-5 h-5 text-indigo-400" />
+              </span>
+              <div>
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                  Random Scenario Generator & Fair Reproducibility
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Every new simulation generates a random workload (active devices, arrival patterns, bursts, and congestion). Replaying the same seed reproduces the exact identical workload.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-indigo-500/30 text-xs font-mono">
+            <span className="text-slate-400">Current Seed:</span>
+            <b className="text-indigo-300">#{config?.random_seed || seed}</b>
+          </div>
+        </div>
+
+        {/* Scenario Summary Pills */}
+        <div className="flex flex-wrap items-center gap-2.5 mb-5 text-xs">
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+            Devices: <b className="text-sky-300">{config?.flows?.length || 0} Clients</b>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+            Total Demand: <b className="text-amber-300">~{totalOffered} Mbps</b>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+            Link Speed: <b className="text-indigo-300">{config?.bottleneck_capacity_mbps || 50} Mbps</b>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+            Duration: <b className="text-slate-200">{config?.duration_seconds || 30}s</b>
+          </span>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => actions.newScenario()}
+              disabled={isBusy || isRunning}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 transition-all disabled:opacity-50"
+            >
+              <Sparkles className="w-4 h-4 text-indigo-200" />
+              Generate New Scenario
+            </button>
+
+            <button
+              onClick={actions.reset}
+              disabled={isBusy}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all disabled:opacity-50"
+              title="Reset simulation to time 0 and replay the exact same scenario"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+              Replay This Scenario
+            </button>
+          </div>
+
+          {/* Load Custom Seed */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <input
+              type="number"
+              placeholder="Custom Seed #"
+              value={customSeedInput}
+              onChange={(e) => setCustomSeedInput(e.target.value)}
+              disabled={isBusy || isRunning}
+              className="w-32 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-indigo-500 disabled:opacity-50 font-mono"
+            />
+            <button
+              onClick={handleLoadCustomSeed}
+              disabled={isBusy || isRunning || !customSeedInput}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 disabled:opacity-50 transition-all"
+            >
+              Load Seed
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Fixed Benchmark Traffic Presets Card */}
       <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
               <Zap className="w-5 h-5 text-amber-400" />
-              Traffic Workload Presets
+              Or Choose a Fixed Traffic Preset
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Presets inject deterministic traffic matrices into the virtual AP link.
+              Standard reproducible benchmark configurations for quick baseline testing.
             </p>
           </div>
           <span className="text-[11px] font-semibold text-slate-400 px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700">
-            Current Workload: {activePreset.toUpperCase()}
+            Active: {activePreset.toUpperCase()}
           </span>
         </div>
 
@@ -116,10 +219,10 @@ export function SimulationControls({ config, status, isBusy, actions }) {
       <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-xl">
         <h3 className="text-base font-bold text-slate-100 flex items-center gap-2 mb-1">
           <Layers className="w-5 h-5 text-indigo-400" />
-          QoS Scheduling Strategy
+          How Should the Network Handle Congestion?
         </h3>
         <p className="text-xs text-slate-400 mb-4">
-          Choose the active packet scheduling algorithm implemented in the simulation engine.
+          Choose a traffic management strategy. This determines how the router decides which packets to send first when the network is busy.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -132,10 +235,10 @@ export function SimulationControls({ config, status, isBusy, actions }) {
                 : 'bg-slate-900 border-slate-800 hover:border-slate-700'
             } disabled:opacity-50`}
           >
-            <div className="font-bold text-sm text-slate-100 mb-1">Mode A: Baseline FIFO</div>
-            <div className="text-xs text-slate-400 mb-2 font-medium">First-In First-Out Queue</div>
+            <div className="font-bold text-sm text-slate-100 mb-1">No Priority (Default)</div>
+            <div className="text-xs text-slate-400 mb-2 font-medium">First-Come, First-Served</div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Neutral scheduling without class prioritization. Under heavy load, bulk traffic causes bufferbloat and high tail-drop loss for video/voice.
+              Every packet waits in one line regardless of type. Under heavy load, a big file download can slow down your video call.
             </p>
           </button>
 
@@ -148,10 +251,10 @@ export function SimulationControls({ config, status, isBusy, actions }) {
                 : 'bg-slate-900 border-slate-800 hover:border-slate-700'
             } disabled:opacity-50`}
           >
-            <div className="font-bold text-sm text-slate-100 mb-1">Mode B: Static QoS</div>
-            <div className="text-xs text-sky-400 mb-2 font-medium">Strict Priority Queueing</div>
+            <div className="font-bold text-sm text-slate-100 mb-1">Fixed Priority</div>
+            <div className="text-xs text-sky-400 mb-2 font-medium">Video/Voice always goes first</div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Strict priority service (Real-Time &gt; Best-Effort &gt; Bulk). Protects video latency continuously by always evacuating high-priority queues first.
+              Video and voice calls always get priority over web browsing and downloads — even when the network isn't busy.
             </p>
           </button>
 
@@ -164,10 +267,10 @@ export function SimulationControls({ config, status, isBusy, actions }) {
                 : 'bg-slate-900 border-slate-800 hover:border-slate-700'
             } disabled:opacity-50`}
           >
-            <div className="font-bold text-sm text-slate-100 mb-1">Mode C: Adaptive QoS</div>
-            <div className="text-xs text-indigo-400 mb-2 font-medium">Congestion-Feedback Controller</div>
+            <div className="font-bold text-sm text-slate-100 mb-1">Smart Priority (Adaptive)</div>
+            <div className="text-xs text-indigo-400 mb-2 font-medium">Automatically adjusts when congested</div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Monitors queue depth, utilization &amp; delay. Dynamically caps bulk share to 20% during congestion, with hysteresis recovery &amp; cooldown timers.
+              Watches the network continuously. When congestion is detected, it automatically limits downloads to 20% of bandwidth to protect video/voice calls.
             </p>
           </button>
         </div>
@@ -177,14 +280,14 @@ export function SimulationControls({ config, status, isBusy, actions }) {
       <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-xl">
         <h3 className="text-base font-bold text-slate-100 flex items-center gap-2 mb-4">
           <Sliders className="w-5 h-5 text-sky-400" />
-          Network Topology Parameters
+          Advanced Settings
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Capacity Slider */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="font-semibold text-slate-300">Shared Bottleneck Capacity</span>
+              <span className="font-semibold text-slate-300">Wi-Fi Link Speed</span>
               <span className="font-bold text-sky-400">{capacity} Mbps</span>
             </div>
             <input
@@ -198,15 +301,15 @@ export function SimulationControls({ config, status, isBusy, actions }) {
               className="w-full accent-sky-500 bg-slate-800 cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-slate-400">
-              <span>10 Mbps (Severe bottleneck)</span>
-              <span>100 Mbps (High bandwidth)</span>
+              <span>10 Mbps (Very slow)</span>
+              <span>100 Mbps (Fast)</span>
             </div>
           </div>
 
           {/* Buffer Capacity Slider */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="font-semibold text-slate-300">Queue Buffer Limit</span>
+              <span className="font-semibold text-slate-300">Router Queue Size</span>
               <span className="font-bold text-emerald-400">{Math.round(queueBytes / 1000)} KB</span>
             </div>
             <input
@@ -220,15 +323,15 @@ export function SimulationControls({ config, status, isBusy, actions }) {
               className="w-full accent-emerald-500 bg-slate-800 cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-slate-400">
-              <span>50 KB (Frequent drops)</span>
-              <span>1000 KB (High bufferbloat)</span>
+              <span>50 KB (Drops packets quickly)</span>
+              <span>1000 KB (Large buffer, more delay)</span>
             </div>
           </div>
 
           {/* Duration */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="font-semibold text-slate-300">Simulation Duration</span>
+              <span className="font-semibold text-slate-300">Simulation Length</span>
               <span className="font-bold text-amber-400">{duration} Seconds</span>
             </div>
             <input
@@ -243,14 +346,14 @@ export function SimulationControls({ config, status, isBusy, actions }) {
             />
             <div className="flex justify-between text-[10px] text-slate-400">
               <span>10s (Quick test)</span>
-              <span>120s (Extended observation)</span>
+              <span>120s (Longer observation)</span>
             </div>
           </div>
 
           {/* Seed Input */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="font-semibold text-slate-300">PRNG Seed (Deterministic Repeatability)</span>
+              <span className="font-semibold text-slate-300">Random Seed</span>
               <span className="font-bold text-indigo-400">Seed: {seed}</span>
             </div>
             <input
@@ -260,7 +363,7 @@ export function SimulationControls({ config, status, isBusy, actions }) {
               disabled={isRunning}
               className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono"
             />
-            <span className="text-[10px] text-slate-400">Exact seed guarantees reproducible packet arrival timestamps.</span>
+            <span className="text-[10px] text-slate-400">Same seed = same simulation results every time. Change it to get different random traffic patterns.</span>
           </div>
         </div>
 

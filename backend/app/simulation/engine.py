@@ -267,6 +267,12 @@ class NetworkSimulationEngine:
             f_drop_p = flow_dropped_count[f.flow_id]
             f_del_p = flow_del_count[f.flow_id]
 
+            f_is_bursting = (
+                getattr(f, "burst_start_sec", 0.0) > 0 and
+                getattr(f, "burst_duration_sec", 0.0) > 0 and
+                f.burst_start_sec <= t_now < (f.burst_start_sec + f.burst_duration_sec)
+            )
+
             flow_metrics_dict[f.flow_id] = FlowStepMetrics(
                 flow_id=f.flow_id,
                 category=f.category,
@@ -283,7 +289,8 @@ class NetworkSimulationEngine:
                 ) if f_delays else 5.0,
                 jitter_ms=round(sum(f_jitters) / len(f_jitters), 2) if f_jitters else 0.0,
                 packet_loss_pct=round((f_drop_p / f_gen_p) * 100.0, 2) if f_gen_p > 0 else 0.0,
-                queue_occupancy_bytes=self.queue_mgr.bytes_by_category.get(f.category, 0)
+                queue_occupancy_bytes=self.queue_mgr.bytes_by_category.get(f.category, 0),
+                is_bursting=f_is_bursting
             )
 
         step_metrics = StepMetrics(

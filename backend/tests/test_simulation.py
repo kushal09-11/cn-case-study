@@ -304,3 +304,62 @@ def test_13_and_14_lifecycle_and_persistence():
     csv_text = svc.export_csv(exp_id)
     assert "step_index,simulated_time_sec" in csv_text
     assert len(csv_text.splitlines()) > 2
+
+
+def test_random_scenarios_different_workloads():
+    """Verify that different random seeds produce different workloads and client compositions."""
+    from app.simulation.presets import generate_random_scenario
+    flows_a, seed_a, meta_a = generate_random_scenario(seed=11111)
+    flows_b, seed_b, meta_b = generate_random_scenario(seed=99999)
+
+    # Different seeds should produce distinct client configs or total offered loads
+    assert seed_a != seed_b
+    assert meta_a["baseline_offered_load_mbps"] != meta_b["baseline_offered_load_mbps"] or len(flows_a) != len(flows_b)
+
+
+def test_same_seed_reproducibility():
+    """Verify that replaying with the exact same seed produces bit-identical simulation results."""
+    from app.simulation.presets import generate_random_scenario
+    flows_1, seed_1, _ = generate_random_scenario(seed=77777)
+    flows_2, seed_2, _ = generate_random_scenario(seed=77777)
+
+    # Config 1
+    cfg1 = SimulationConfig(
+        duration_seconds=3.0,
+        bottleneck_capacity_mbps=50.0,
+        random_seed=seed_1,
+        qos_mode=QoSMode.BASELINE,
+        flows=flows_1
+    )
+    engine1 = NetworkSimulationEngine(cfg1)
+    agg1 = engine1.run_full()
+
+    # Config 2
+    cfg2 = SimulationConfig(
+        duration_seconds=3.0,
+        bottleneck_capacity_mbps=50.0,
+        random_seed=seed_2,
+        qos_mode=QoSMode.BASELINE,
+        flows=flows_2
+    )
+    engine2 = NetworkSimulationEngine(cfg2)
+    agg2 = engine2.run_full()
+
+    # Identical packets, throughput, and loss
+    assert agg1.total_packets_generated == agg2.total_packets_generated
+    assert agg1.total_packets_delivered == agg2.total_packets_delivered
+    assert agg1.total_packets_dropped == agg2.total_packets_dropped
+    assert agg1.overall_throughput_mbps == agg2.overall_throughput_mbps
+    assert agg1.overall_packet_loss_pct == agg2.overall_packet_loss_pct
+
+
+def test_fair_comparison_identical_workload():
+    """Verify that 3-way QoS comparison executes with identical workload and capacity."""
+    svc = SimulationService()
+    svc.generate_new_scenario(seed=43210)
+    
+    comp_res = svc.run_comparison({"use_current_scenario": True})
+    assert comp_res.baseline is not None
+    assert comp_res.static_qos is not None
+    assert comp_res.adaptive_qos is not None
+    assert "43210" in comp_res.notes

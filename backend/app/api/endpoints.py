@@ -130,6 +130,18 @@ async def reset_simulation():
     return {"message": "Simulation reset", "status": simulation_service.get_status_dict()}
 
 
+@router.post("/simulation/new-scenario")
+async def new_scenario(seed: Optional[int] = None):
+    scenario_res = simulation_service.generate_new_scenario(seed)
+    await simulation_service.broadcast_update()
+    return {
+        "message": "New random scenario generated successfully",
+        "scenario": scenario_res,
+        "status": simulation_service.get_status_dict(),
+        "config": get_config()
+    }
+
+
 @router.get("/simulation/status")
 def get_simulation_status():
     return simulation_service.get_status_dict()

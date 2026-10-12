@@ -49,3 +49,36 @@ def test_api_run_comparison():
     assert "baseline" in data
     assert "static_qos" in data
     assert "adaptive_qos" in data
+
+
+def test_api_new_scenario():
+    # Calling new-scenario generates a fresh random scenario
+    resp1 = client.post("/api/simulation/new-scenario")
+    assert resp1.status_code == 200
+    data1 = resp1.json()
+    assert "scenario" in data1
+    assert "seed" in data1["scenario"]
+    assert 3 <= data1["scenario"]["num_clients"] <= 7
+
+    # Calling with a specific seed produces deterministic result
+    resp2 = client.post("/api/simulation/new-scenario?seed=54321")
+    assert resp2.status_code == 200
+    data2 = resp2.json()["scenario"]
+    assert data2["seed"] == 54321
+
+    resp3 = client.post("/api/simulation/new-scenario?seed=54321")
+    data3 = resp3.json()["scenario"]
+    assert data2["num_clients"] == data3["num_clients"]
+    assert data2["baseline_offered_load_mbps"] == data3["baseline_offered_load_mbps"]
+
+
+def test_api_topology_has_queue_and_server():
+    resp = client.get("/api/topology")
+    assert resp.status_code == 200
+    data = resp.json()
+    node_ids = [n["id"] for n in data["nodes"]]
+    assert "node_router" in node_ids
+    assert "node_queue" in node_ids
+    assert "node_server" in node_ids
+    assert "node_monitor" in node_ids
+    assert "node_controller" in node_ids
