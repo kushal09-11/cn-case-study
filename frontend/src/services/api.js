@@ -48,6 +48,14 @@ export async function resetSimulation() {
   return res.json();
 }
 
+export async function newScenario(seed) {
+  const url = seed !== undefined && seed !== null 
+    ? `${API_BASE}/simulation/new-scenario?seed=${seed}` 
+    : `${API_BASE}/simulation/new-scenario`;
+  const res = await fetch(url, { method: 'POST' });
+  return res.json();
+}
+
 export async function getSimulationStatus() {
   const res = await fetch(`${API_BASE}/simulation/status`);
   return res.json();

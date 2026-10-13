@@ -46,6 +46,9 @@ class FlowConfig:
     offered_load_mbps: float
     packet_size_bytes: int
     priority: int = 2  # 1: Real-time (highest), 2: Best-effort, 3: Bulk (lowest)
+    burst_start_sec: float = 0.0      # Start time of traffic surge/burst (seconds)
+    burst_duration_sec: float = 0.0   # Duration of burst (seconds)
+    burst_multiplier: float = 1.0     # Multiplier applied to offered load during burst
 
 
 @dataclass
@@ -58,6 +61,7 @@ class SimulationConfig:
     queue_capacity_bytes: int = 500_000     # 500 KB finite buffer limit
     random_seed: int = 42
     qos_mode: QoSMode = QoSMode.BASELINE
+    scenario_name: str = "Default High Load"
     
     # Congestion detection thresholds
     threshold_utilization_warning: float = 85.0
@@ -93,12 +97,16 @@ class FlowStepMetrics:
     jitter_ms: float = 0.0
     packet_loss_pct: float = 0.0
     queue_occupancy_bytes: int = 0
+<<<<<<< HEAD
     
     # Cumulative flow metrics
     cumulative_generated_packets: int = 0
     cumulative_delivered_packets: int = 0
     cumulative_dropped_packets: int = 0
     cumulative_loss_pct: float = 0.0
+=======
+    is_bursting: bool = False
+>>>>>>> origin/topologyimproved
 
 
 @dataclass

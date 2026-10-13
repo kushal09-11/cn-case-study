@@ -18,7 +18,7 @@ from app.simulation.models import (
     FlowConfig
 )
 from app.simulation.engine import NetworkSimulationEngine
-from app.simulation.presets import create_default_config, get_preset_flows
+from app.simulation.presets import create_default_config, get_preset_flows, generate_random_scenario
 from app.congestion.diagnostics import CongestionDiagnostics, DiagnosisReport
 from app.database.db import SessionLocal, Base, engine
 from app.database.models import (
@@ -49,6 +49,26 @@ class SimulationService:
         self.current_config = new_config
         self.engine.reset(new_config)
         return self.current_config
+
+    def generate_new_scenario(self, seed: Optional[int] = None) -> Dict[str, Any]:
+        """Generate and apply a brand-new random scenario with randomized clients, bursts, and workload."""
+        flows, actual_seed, meta = generate_random_scenario(
+            seed=seed,
+            bottleneck_capacity_mbps=self.current_config.bottleneck_capacity_mbps
+        )
+        self.current_config.flows = flows
+        self.current_config.random_seed = actual_seed
+        self.current_config.scenario_name = f"Random Scenario #{actual_seed}"
+        self.engine.reset(self.current_config)
+        return {
+            "seed": actual_seed,
+            "num_clients": len(flows),
+            "baseline_offered_load_mbps": meta["baseline_offered_load_mbps"],
+            "peak_offered_load_mbps": meta["peak_offered_load_mbps"],
+            "expected_congestion": meta["expected_congestion"],
+            "flows": [f.__dict__ for f in flows],
+            "message": f"Generated new scenario #{actual_seed} with {len(flows)} clients"
+        }
 
     def set_preset(self, preset_name: str, qos_mode: Optional[QoSMode] = None) -> SimulationConfig:
         mode = qos_mode or self.current_config.qos_mode
@@ -212,85 +232,131 @@ class SimulationService:
 
         is_congested = (self.engine.congestion_detector.current_state == CongestionState.CONGESTED)
         latest = self.engine.last_step_metrics
+        flows = self.current_config.flows
+        num_flows = len(flows)
 
-        # Router / AP node
+        # 1. Virtual Wi-Fi Router / Access Point Node
         router_details = {
             "bottleneck_capacity_mbps": self.current_config.bottleneck_capacity_mbps,
-            "aggregate_throughput_mbps": latest.delivered_throughput_mbps if latest else 0.0,
+            "ingress_mbps": latest.offered_load_mbps if latest else 0.0,
+            "delivered_throughput_mbps": latest.delivered_throughput_mbps if latest else 0.0,
             "link_utilization_pct": latest.link_utilization_pct if latest else 0.0,
+<<<<<<< HEAD
             "queue_occupancy_pct": latest.queue_occupancy_pct if latest else 0.0,
             "queue_occupancy_bytes": latest.queue_occupancy_bytes if latest else 0,
             "queue_capacity_bytes": self.current_config.queue_capacity_bytes,
             "packet_drops": latest.total_packets_dropped if latest else 0,
             "cumulative_drops": latest.cumulative_packets_dropped if latest else 0,
+=======
+>>>>>>> origin/topologyimproved
             "congestion_state": self.engine.congestion_detector.current_state.value,
-            "active_qos_policy": self.engine.qos_controller.active_policy_name
+            "active_qos_policy": self.engine.qos_controller.active_policy_name,
+            "active_flows_count": num_flows,
+            "queue_occupancy_pct": latest.queue_occupancy_pct if latest else 0.0,
+            "packet_drops": latest.total_packets_dropped if latest else 0
         }
-
         nodes.append({
             "id": "node_router",
             "type": "router",
-            "label": "Virtual Wi-Fi AP / Router",
-            "position": {"x": 400, "y": 200},
+            "label": "Wi-Fi Router (AP)",
+            "position": {"x": 340, "y": 240},
             "details": router_details
         })
 
-        # Monitoring Agent Node
+        # 2. Bottleneck Queue & Buffer Node
+        queue_details = {
+            "queue_capacity_bytes": self.current_config.queue_capacity_bytes,
+            "queue_occupancy_bytes": latest.queue_occupancy_bytes if latest else 0,
+            "queue_occupancy_pct": latest.queue_occupancy_pct if latest else 0.0,
+            "packet_drops": latest.total_packets_dropped if latest else 0,
+            "packet_loss_pct": latest.packet_loss_pct if latest else 0.0,
+            "avg_latency_ms": latest.avg_latency_ms if latest else 5.0,
+            "p95_latency_ms": latest.p95_latency_ms if latest else 5.0,
+            "active_policy": self.engine.qos_controller.active_policy_name,
+            "qos_mode": self.current_config.qos_mode.value,
+            "is_throttling": self.engine.qos_controller.is_throttling_bulk,
+            "bulk_rate_limit": f"{int(self.current_config.adaptive_bulk_rate_limit_ratio * 100)}%"
+        }
+        nodes.append({
+            "id": "node_queue",
+            "type": "queue",
+            "label": "Bottleneck Queue & Scheduler",
+            "position": {"x": 580, "y": 240},
+            "details": queue_details
+        })
+
+        # 3. Target Destination Server Node
+        server_details = {
+            "delivered_throughput_mbps": latest.delivered_throughput_mbps if latest else 0.0,
+            "total_delivered_packets": latest.total_packets_delivered if latest else 0,
+            "total_packets_generated": latest.total_packets_generated if latest else 0,
+            "avg_latency_ms": latest.avg_latency_ms if latest else 5.0,
+            "status": "Receiving" if self.engine.is_running else ("Complete" if self.engine.is_completed else "Ready")
+        }
+        nodes.append({
+            "id": "node_server",
+            "type": "server",
+            "label": "Destination Server / Internet",
+            "position": {"x": 820, "y": 240},
+            "details": server_details
+        })
+
+        # 4. Monitoring Agent Node (Control Plane - Above)
         nodes.append({
             "id": "node_monitor",
             "type": "monitor",
             "label": "Congestion Detector Agent",
-            "position": {"x": 400, "y": 50},
+            "position": {"x": 460, "y": 40},
             "details": {
                 "state": self.engine.congestion_detector.current_state.value,
                 "warning_threshold_util": self.current_config.threshold_utilization_warning,
                 "congested_threshold_util": self.current_config.threshold_utilization_congested,
                 "congested_threshold_queue": self.current_config.threshold_queue_occupancy_congested,
                 "events_detected": len(self.engine.congestion_detector.events),
+<<<<<<< HEAD
                 "moving_averages": self.engine.congestion_detector.current_moving_averages
+=======
+                "active_latency_ms": latest.avg_latency_ms if latest else 5.0,
+                "active_loss_pct": latest.packet_loss_pct if latest else 0.0
+>>>>>>> origin/topologyimproved
             }
         })
-        edges.append({
-            "id": "edge_monitor_router",
-            "source": "node_router",
-            "target": "node_monitor",
-            "label": "Telemetry",
-            "animated": True,
-            "is_congested": False
-        })
 
-        # QoS Controller Node
+        # 5. QoS Controller Node (Control Plane - Below)
         nodes.append({
             "id": "node_controller",
             "type": "controller",
             "label": "QoS Policy Controller",
-            "position": {"x": 400, "y": 360},
+            "position": {"x": 460, "y": 450},
             "details": {
                 "qos_mode": self.current_config.qos_mode.value,
                 "active_policy": self.engine.qos_controller.active_policy_name,
                 "bulk_rate_limit": f"{int(self.current_config.adaptive_bulk_rate_limit_ratio * 100)}%",
+<<<<<<< HEAD
                 "transitions_count": len(self.engine.qos_controller.transitions),
                 "latest_decision": self.engine.qos_controller.latest_decision
+=======
+                "is_throttling": self.engine.qos_controller.is_throttling_bulk,
+                "transitions_count": len(self.engine.qos_controller.transitions)
+>>>>>>> origin/topologyimproved
             }
         })
-        edges.append({
-            "id": "edge_controller_router",
-            "source": "node_controller",
-            "target": "node_router",
-            "label": "QoS Control",
-            "animated": True,
-            "is_congested": False
-        })
 
+<<<<<<< HEAD
         # Virtual Client Nodes placed in an arc/grid around AP
         flows = self.current_config.flows
         num_flows = len(flows)
         x_start = 80
         x_gap = 180 if num_flows <= 4 else 140
+=======
+        # 6. Virtual Client Nodes (Data Plane - Left column, evenly spaced)
+        step_y = max(68, min(105, int(420 / max(1, num_flows - 1)))) if num_flows > 1 else 100
+        y_start = max(50, int(240 - ((num_flows - 1) * step_y) / 2))
+>>>>>>> origin/topologyimproved
 
         for i, f in enumerate(flows):
-            client_x = x_start + (i * x_gap)
-            client_y = 520
+            client_x = 40
+            client_y = y_start + (i * step_y)
             f_metric = latest.flow_metrics.get(f.flow_id) if latest else None
 
             client_details = {
@@ -306,9 +372,14 @@ class SimulationService:
                 "jitter_ms": f_metric.jitter_ms if f_metric else 0.0,
                 "packet_loss_pct": f_metric.packet_loss_pct if f_metric else 0.0,
                 "dropped_packets": f_metric.dropped_packets if f_metric else 0,
+<<<<<<< HEAD
                 "cumulative_dropped_packets": f_metric.cumulative_dropped_packets if f_metric else 0,
                 "cumulative_generated_packets": f_metric.cumulative_generated_packets if f_metric else 0,
                 "cumulative_loss_pct": f_metric.cumulative_loss_pct if f_metric else 0.0
+=======
+                "is_bursting": getattr(f_metric, "is_bursting", False) if f_metric else False,
+                "burst_multiplier": getattr(f, "burst_multiplier", 1.0)
+>>>>>>> origin/topologyimproved
             }
 
             nodes.append({
@@ -320,17 +391,86 @@ class SimulationService:
                 "details": client_details
             })
 
+<<<<<<< HEAD
             # Edge connecting client to router
             has_drops = (f_metric.dropped_packets > 0) if f_metric else False
+=======
+            # Edge from Client to Router (Wi-Fi Uplink)
+>>>>>>> origin/topologyimproved
             edges.append({
                 "id": f"edge_{f.client_id}_router",
                 "source": f.client_id,
                 "target": "node_router",
-                "label": f"{f.offered_load_mbps}M",
+                "label": f"{f.offered_load_mbps} Mbps Wi-Fi",
                 "traffic_category": f.category.value,
+<<<<<<< HEAD
                 "animated": True,
                 "is_congested": is_congested and (has_drops or f.category == TrafficCategory.BULK)
+=======
+                "edge_type": "client_uplink",
+                "throughput_mbps": f_metric.throughput_mbps if f_metric else 0.0,
+                "offered_load_mbps": f.offered_load_mbps,
+                "is_bursting": getattr(f_metric, "is_bursting", False) if f_metric else False,
+                "packet_loss_pct": f_metric.packet_loss_pct if f_metric else 0.0,
+                "animated": self.engine.is_running,
+                "is_congested": is_congested and (f.category == TrafficCategory.BULK or (f_metric and f_metric.packet_loss_pct > 0.0))
+>>>>>>> origin/topologyimproved
             })
+
+        # Core Forwarding Data Plane Edges
+        # Router -> Bottleneck Queue
+        edges.append({
+            "id": "edge_router_queue",
+            "source": "node_router",
+            "target": "node_queue",
+            "label": f"Buffer Ingress ({round(latest.offered_load_mbps, 1)} Mbps)" if latest else "Buffer Ingress",
+            "edge_type": "buffer_ingress",
+            "throughput_mbps": latest.offered_load_mbps if latest else 0.0,
+            "animated": self.engine.is_running,
+            "is_congested": is_congested
+        })
+
+        # Queue -> Destination Server (The Bottleneck Link)
+        edges.append({
+            "id": "edge_queue_server",
+            "source": "node_queue",
+            "target": "node_server",
+            "label": f"Bottleneck WAN Link ({self.current_config.bottleneck_capacity_mbps} Mbps)",
+            "edge_type": "wan_egress",
+            "throughput_mbps": latest.delivered_throughput_mbps if latest else 0.0,
+            "capacity_mbps": self.current_config.bottleneck_capacity_mbps,
+            "animated": self.engine.is_running,
+            "is_congested": is_congested
+        })
+
+        # Control & Monitoring Telemetry Edges (Distinct dashed styling)
+        edges.append({
+            "id": "edge_router_monitor",
+            "source": "node_router",
+            "target": "node_monitor",
+            "label": "Link Telemetry",
+            "edge_type": "telemetry",
+            "animated": self.engine.is_running,
+            "is_congested": False
+        })
+        edges.append({
+            "id": "edge_queue_monitor",
+            "source": "node_queue",
+            "target": "node_monitor",
+            "label": "Queue Telemetry",
+            "edge_type": "telemetry",
+            "animated": self.engine.is_running,
+            "is_congested": False
+        })
+        edges.append({
+            "id": "edge_controller_queue",
+            "source": "node_controller",
+            "target": "node_queue",
+            "label": "QoS Policy Feedback",
+            "edge_type": "control",
+            "animated": self.engine.is_running,
+            "is_congested": False
+        })
 
         return {
             "nodes": nodes,
@@ -450,22 +590,51 @@ class SimulationService:
         """
         Executes Baseline, Static QoS, and Adaptive QoS sequentially under identical conditions:
         - Same capacity
-        - Same flows & offered traffic
+        - Same flows & offered traffic workload
         - Same duration
         - Same random seed
         """
-        preset_name = req.get("preset_name", "high")
-        capacity = float(req.get("bottleneck_capacity_mbps", 50.0))
-        duration = float(req.get("duration_seconds", 20.0))
-        seed = int(req.get("random_seed", 42))
+        preset_name = req.get("preset_name")
+        use_current = req.get("use_current_scenario", True)
+        capacity = float(req.get("bottleneck_capacity_mbps") or self.current_config.bottleneck_capacity_mbps)
+        duration = float(req.get("duration_seconds") or self.current_config.duration_seconds)
+        seed = int(req.get("random_seed") or self.current_config.random_seed)
+
+        # Use current scenario flows if available and not specifically requesting a fixed preset
+        if use_current and self.current_config.flows and (not preset_name or preset_name == "current"):
+            flows_to_use = [
+                FlowConfig(
+                    flow_id=f.flow_id,
+                    client_id=f.client_id,
+                    client_name=f.client_name,
+                    category=f.category,
+                    offered_load_mbps=f.offered_load_mbps,
+                    packet_size_bytes=f.packet_size_bytes,
+                    priority=f.priority,
+                    burst_start_sec=getattr(f, "burst_start_sec", 0.0),
+                    burst_duration_sec=getattr(f, "burst_duration_sec", 0.0),
+                    burst_multiplier=getattr(f, "burst_multiplier", 1.0)
+                )
+                for f in self.current_config.flows
+            ]
+        elif preset_name and preset_name.lower() in ("low", "medium", "high"):
+            flows_to_use = get_preset_flows(preset_name.lower())
+        else:
+            flows_to_use = self.current_config.flows if self.current_config.flows else get_preset_flows("high")
 
         results: Dict[str, ComparisonResultItem] = {}
 
         for mode in [QoSMode.BASELINE, QoSMode.STATIC_QoS, QoSMode.ADAPTIVE_QoS]:
-            cfg = create_default_config(preset_name, mode)
-            cfg.bottleneck_capacity_mbps = capacity
-            cfg.duration_seconds = duration
-            cfg.random_seed = seed
+            cfg = SimulationConfig(
+                simulation_id=f"sim_compare_{mode.value}",
+                duration_seconds=duration,
+                time_step_seconds=self.current_config.time_step_seconds,
+                bottleneck_capacity_mbps=capacity,
+                queue_capacity_bytes=self.current_config.queue_capacity_bytes,
+                random_seed=seed,
+                qos_mode=mode,
+                flows=flows_to_use
+            )
 
             sim_runner = NetworkSimulationEngine(cfg)
             agg = sim_runner.run_full()
@@ -525,7 +694,7 @@ class SimulationService:
             static_qos=results[QoSMode.STATIC_QoS.value],
             adaptive_qos=results[QoSMode.ADAPTIVE_QoS.value],
             recommendations=recommendations,
-            notes="Fair comparison executed with identical offered load, random seed, and link capacity."
+            notes=f"Fair comparison executed with identical offered load ({len(flows_to_use)} flows), random seed #{seed}, and link capacity ({capacity} Mbps)."
         )
 
     def export_csv(self, experiment_id: str) -> str:

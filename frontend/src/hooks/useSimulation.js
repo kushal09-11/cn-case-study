@@ -110,6 +110,17 @@ export function useSimulation() {
     }
   };
 
+  const handleNewScenario = async (seed) => {
+    setIsBusy(true);
+    try {
+      const res = await api.newScenario(seed);
+      await refreshAll();
+      return res;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const handleSetPreset = async (presetName, qosMode) => {
     setIsBusy(true);
     try {
@@ -157,6 +168,7 @@ export function useSimulation() {
       resume: handleResume,
       stop: handleStop,
       reset: handleReset,
+      newScenario: handleNewScenario,
       setPreset: handleSetPreset,
       setQoSMode: handleSetQoSMode,
       updateConfig: handleUpdateConfig,

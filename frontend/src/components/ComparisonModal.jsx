@@ -22,9 +22,9 @@ export function ComparisonModal({ config, onComplete }) {
     setError(null);
     try {
       const data = await api.runComparison({
-        preset_name: 'high',
+        use_current_scenario: true,
         bottleneck_capacity_mbps: config?.bottleneck_capacity_mbps || 50.0,
-        duration_seconds: 20.0,
+        duration_seconds: config?.duration_seconds || 20.0,
         random_seed: config?.random_seed || 42,
       });
       setResults(data);
@@ -51,6 +51,9 @@ export function ComparisonModal({ config, onComplete }) {
     };
   };
 
+  const numClients = config?.flows?.length || 0;
+  const totalLoad = Math.round(config?.flows?.reduce((acc, f) => acc + (f.offered_load_mbps || 0), 0) || 0);
+
   return (
     <div className="space-y-6">
       {/* Intro banner */}
@@ -58,10 +61,10 @@ export function ComparisonModal({ config, onComplete }) {
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
             <GitCompare className="w-5 h-5 text-sky-400" />
-            Controlled 3-Way QoS Experiment Benchmark
+            Fair 3-Way QoS Controlled Benchmark
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
-            Executes Baseline FIFO, Static QoS, and Adaptive QoS sequentially using identical network capacity ({config?.bottleneck_capacity_mbps} Mbps), identical high-load workload (82 Mbps), and the identical PRNG seed ({config?.random_seed}).
+          <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+            Simulates <b>Baseline FIFO</b>, <b>Static Strict Priority</b>, and <b>Adaptive QoS</b> sequentially using the <b>exact identical scenario</b> ({numClients} clients, ~{totalLoad} Mbps offered demand, Seed #{config?.random_seed}), link capacity ({config?.bottleneck_capacity_mbps} Mbps), and duration.
           </p>
         </div>
 

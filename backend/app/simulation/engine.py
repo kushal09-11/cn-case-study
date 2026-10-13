@@ -294,6 +294,7 @@ class NetworkSimulationEngine:
             f_drop_p = flow_dropped_count[f.flow_id]
             f_del_p = flow_del_count[f.flow_id]
 
+<<<<<<< HEAD
             cum_stats = self.cumulative_flow_stats.get(f.flow_id, {
                 "generated_packets": f_gen_p,
                 "delivered_packets": f_del_p,
@@ -303,6 +304,13 @@ class NetworkSimulationEngine:
             c_drop = cum_stats["dropped_packets"]
             c_del = cum_stats["delivered_packets"]
             c_loss = round((c_drop / c_gen) * 100.0, 2) if c_gen > 0 else 0.0
+=======
+            f_is_bursting = (
+                getattr(f, "burst_start_sec", 0.0) > 0 and
+                getattr(f, "burst_duration_sec", 0.0) > 0 and
+                f.burst_start_sec <= t_now < (f.burst_start_sec + f.burst_duration_sec)
+            )
+>>>>>>> origin/topologyimproved
 
             flow_metrics_dict[f.flow_id] = FlowStepMetrics(
                 flow_id=f.flow_id,
@@ -321,10 +329,14 @@ class NetworkSimulationEngine:
                 jitter_ms=round(sum(f_jitters) / len(f_jitters), 2) if f_jitters else 0.0,
                 packet_loss_pct=round((f_drop_p / f_gen_p) * 100.0, 2) if f_gen_p > 0 else 0.0,
                 queue_occupancy_bytes=self.queue_mgr.bytes_by_category.get(f.category, 0),
+<<<<<<< HEAD
                 cumulative_generated_packets=c_gen,
                 cumulative_delivered_packets=c_del,
                 cumulative_dropped_packets=c_drop,
                 cumulative_loss_pct=c_loss
+=======
+                is_bursting=f_is_bursting
+>>>>>>> origin/topologyimproved
             )
 
         # Cumulative totals

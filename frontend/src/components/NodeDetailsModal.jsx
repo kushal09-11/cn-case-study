@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Server, Laptop, Cpu, ShieldAlert, Activity } from 'lucide-react';
+import { X, Server, Laptop, Cpu, ShieldAlert, Activity, HardDrive, Globe } from 'lucide-react';
 
 export function NodeDetailsModal({ node, onClose }) {
   if (!node) return null;
@@ -10,6 +10,10 @@ export function NodeDetailsModal({ node, onClose }) {
     switch (type) {
       case 'router':
         return <Server className="w-5 h-5 text-sky-400" />;
+      case 'queue':
+        return <HardDrive className="w-5 h-5 text-sky-400" />;
+      case 'server':
+        return <Globe className="w-5 h-5 text-emerald-400" />;
       case 'monitor':
         return <ShieldAlert className="w-5 h-5 text-amber-400" />;
       case 'controller':
@@ -90,6 +94,70 @@ export function NodeDetailsModal({ node, onClose }) {
               </div>
             </div>
           </>
+        )}
+
+        {type === 'queue' && (
+          <>
+            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 space-y-2">
+              <div className="text-xs font-semibold text-sky-400 uppercase tracking-wider">Buffer & Queue Occupancy</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Current Occupancy:</span>
+                <span className="font-semibold text-slate-200">{details.queue_occupancy_pct}% ({Math.round((details.queue_occupancy_bytes || 0) / 1000)} KB)</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Total Buffer Capacity:</span>
+                <span className="font-semibold text-slate-200">{Math.round((details.queue_capacity_bytes || 500000) / 1000)} KB</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Packets Dropped:</span>
+                <span className={`font-semibold ${details.packet_drops > 0 ? 'text-rose-400' : 'text-slate-200'}`}>
+                  {details.packet_drops} pkts ({details.packet_loss_pct || 0}%)
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 space-y-2">
+              <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Queue Latency & Scheduling</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Average Delay:</span>
+                <span className="font-semibold text-slate-200">{details.avg_latency_ms} ms</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">P95 Delay:</span>
+                <span className="font-semibold text-slate-200">{details.p95_latency_ms} ms</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Active Policy:</span>
+                <span className="font-semibold text-slate-200">{details.active_policy}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Bulk Rate Limit:</span>
+                <span className="font-semibold text-amber-300">{details.bulk_rate_limit || '100%'}</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {type === 'server' && (
+          <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 space-y-2">
+            <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">WAN Egress & Delivery</div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400">Delivered Throughput:</span>
+              <span className="font-semibold text-emerald-300">{details.delivered_throughput_mbps} Mbps</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400">Total Packets Received:</span>
+              <span className="font-semibold text-slate-200">{details.total_delivered_packets}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400">End-to-End Latency:</span>
+              <span className="font-semibold text-slate-200">{details.avg_latency_ms} ms</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400">Server Status:</span>
+              <span className="font-semibold text-slate-200 capitalize">{details.status}</span>
+            </div>
+          </div>
         )}
 
         {type === 'client' && (
